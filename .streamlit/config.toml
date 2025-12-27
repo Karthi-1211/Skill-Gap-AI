@@ -1,0 +1,12 @@
+[server]
+runOnSave = true
+fileWatcherType = "auto"
+enableCORS = false
+enableXsrfProtection = false
+
+[runner]
+fastReruns = true
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
