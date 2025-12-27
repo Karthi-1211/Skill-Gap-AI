@@ -4,8 +4,8 @@ import textwrap
 import pandas as pd
 import numpy as np
 from collections import Counter
-from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer
+# Imports moved inside functions to save memory
+
 
 try:
     from milestone2 import extract_skills as extract_skills_m1, SKILL_CATEGORIES, get_skill_category
@@ -18,6 +18,7 @@ except ImportError:
 @st.cache_resource(show_spinner="Loading AI Neural Network...")
 def load_model():
     # Model is loaded once per session
+    from sentence_transformers import SentenceTransformer
     return SentenceTransformer("all-MiniLM-L6-v2")
 
 @st.cache_data(show_spinner="Analyzing Semantic Similarity...")
@@ -29,6 +30,7 @@ def compute_similarity(resume_skills, jd_skills, match_thr=0.8, partial_thr=0.5)
     if not resume_skills or not jd_skills:
         return pd.DataFrame(), [], {"overall": 0, "matched": 0, "partial": 0, "missing": 0, "total": 0}
 
+    from sklearn.metrics.pairwise import cosine_similarity
     model = load_model()
     
     all_text = resume_skills + jd_skills
