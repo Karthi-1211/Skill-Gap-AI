@@ -11,3 +11,4 @@ user_session.json
 *.pdf
 *.docx
 *.txt
+!requirements.txt
