@@ -1,15 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 streamlit
 pypdf
 docx2txt
-spacy
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 pandas
-plotly
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-transformers
-sentence-transformers
 scikit-learn
 jinja2
 requests
 streamlit-lottie
+plotly
+spacy==3.7.2
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+torch
+transformers
+sentence-transformers

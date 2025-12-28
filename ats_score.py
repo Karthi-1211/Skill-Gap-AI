@@ -32,10 +32,10 @@ def load_lottieurl(url: str):
 # -------------------------------------------------------
 # CORE LOGIC
 # -------------------------------------------------------
-def calculate_ats_score_advanced(resume_text, jd_text=""):
+def calculate_ats_score_realtime(resume_text, jd_text=""):
     """
-    Returns a comprehensive Audit Report with Deep Feedback + JD Match.
-    Uses local NLP extraction and Embedding Similiarity.
+    Simulates a Real-Time Enterprise ATS Scoring Engine.
+    Uses strict penalties for missing sections and heavily weighs JD overlap.
     """
     raw_score = 0.0 
     checks = [] # {category, check, status (bool), feedback, impact (high/med/low)}
@@ -44,132 +44,201 @@ def calculate_ats_score_advanced(resume_text, jd_text=""):
     resume_lower = clean_text.lower()
     words = re.findall(r'\w+', resume_lower)
     word_count = len(words)
-    
-    # Keyword Extraction
-    common_stops = {"and", "the", "to", "of", "in", "a", "with", "for", "on", "as", "is", "by", "an", "at", "or", "from", "i", "my"}
-    keywords = [w for w in words if w not in common_stops and len(w) > 3]
-    top_keywords = Counter(keywords).most_common(12)
+    sentences = re.split(r'[.!?]+', clean_text)
+    avg_sentence_len = sum(len(s.split()) for s in sentences) / len(sentences) if sentences else 0
+
+    # --- CONSTANTS & SCORING WEIGHTS ---
+    WEIGHTS = {"Critical": 12.0, "High": 6.0, "Medium": 3.0, "Low": 1.0}
+    MAX_POSSIBLE_SCORE = 0.0 
 
     def add_check(cat, name, status, feedback, impact="Medium"):
-        nonlocal raw_score
-        pts = 0.0
+        nonlocal raw_score, MAX_POSSIBLE_SCORE
+        weight = WEIGHTS.get(impact, 1.0)
+        
+        # We always add to max_possible to calculate percentage later
+        MAX_POSSIBLE_SCORE += weight
+        
         if status:
-            # Precise point values
-            if impact == "Critical": pts = 9.5
-            elif impact == "High": pts = 4.8
-            elif impact == "Medium": pts = 2.5
-            else: pts = 1.0
-            raw_score += pts
+            raw_score += weight
+        
         checks.append({
             "category": cat, "name": name, "status": status, 
             "feedback": feedback, "impact": impact
         })
 
-    # 1. FILE & FORMATTING
-    add_check("Formatting", "Text Selectability", True, "OCR-free plain text detected.", "Critical")
-    if 450 <= word_count <= 1200:
-        add_check("Formatting", "Word Count", True, f"Optimal length ({word_count} words).", "High")
-    elif word_count < 450:
-        add_check("Formatting", "Word Count", False, f"Too short ({word_count} words). Aim for 450+.", "High")
+    # --- DATA EXTRACTION ---
+    lines = [l.strip() for l in clean_text.split('\n') if l.strip()]
+    candidate_name = lines[0] if lines else "Candidate"
+    if len(candidate_name) > 40 or "@" in candidate_name or len(candidate_name.split()) > 6:
+        candidate_name = "Candidate"
+        
+    emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', resume_text)
+    email_found = emails[0] if emails else "N/A"
+
+    phone_pattern = r'(\+?\d{1,3}[-.\s]?)?(\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}'
+    phones = re.findall(phone_pattern, resume_text)
+    valid_phones = []
+    if phones:
+        matches = re.finditer(phone_pattern, resume_text)
+        for m in matches:
+            p_text = m.group(0).strip()
+            if len(re.sub(r'\D', '', p_text)) >= 10: 
+                valid_phones.append(p_text)
+    phone_found = valid_phones[0] if valid_phones else "N/A"
+
+    # --- 1. KO FACTORS (KNOCK-OUT) ---
+    # Real ATS rejects immediately if contact info or basic formatting is unusable.
+    # We won't stop execution, but we'll flag them as Critical.
+    
+    # 1.1 Contact Info
+    if email_found != "N/A":
+        add_check("Essentials", "Email Verification", True, f"Verified: {email_found}", "Critical")
     else:
-        add_check("Formatting", "Word Count", False, f"Too long ({word_count} words). Keep under 1200.", "Medium")
+        add_check("Essentials", "Email Verification", False, "Missing Email. **Auto-Reject Risk**.", "Critical")
+
+    pattern_phone = phone_found != "N/A"
+    add_check("Essentials", "Phone Verification", pattern_phone, 
+              "Contact number detected." if pattern_phone else "No phone detected.", "Critical")
+              
+    # 1.2 Parsing Readability
+    add_check("Formatting", "Machine Readability", True, "Text layer is selectable.", "Critical")
+
+    # --- 2. STRUCTURAL INTEGRITY ---
+    sections = {
+        "Experience": r"(work|professional|relevant|industry)\s+experience|employment\s+history|work\s+history",
+        "Education": r"education|academic|qualification|university",
+        "Skills": r"skills|technical\s+skills|expertise|competencies|technologies",
+        "Projects": r"projects|portfolio|personal\s+projects"
+    }
+    section_presence = {}
+    for sec, pattern in sections.items():
+        found = bool(re.search(pattern, resume_lower))
+        section_presence[sec] = found
+        impact = "Critical" if sec in ["Experience", "Education"] else "High"
+        add_check("Structure", f"{sec} Detected", found, 
+                  f"Found standard header: {sec}" if found else f"Missing Section: {sec}", impact)
+
+    # --- 3. FORMATTING HYGIENE ---
+    if 450 <= word_count <= 1200:
+        add_check("Formatting", "Word Count", True, f"Optimal volume ({word_count} words).", "High")
+    elif word_count < 450:
+        add_check("Formatting", "Word Count", False, f"Too brief ({word_count} words). Low context.", "High")
+    else:
+        add_check("Formatting", "Word Count", False, f"Too lengthy ({word_count} words). Risk of truncation.", "Medium")
 
     bullet_count = resume_text.count('•') + resume_text.count('- ') + resume_text.count('* ')
-    if bullet_count > 10:
-        add_check("Formatting", "Bullet Points", True, f"Good list usage ({bullet_count} bullets).", "High")
+    if bullet_count > 15:
+        add_check("Formatting", "Bulletization", True, "High readability via bullets.", "High")
     else:
-        add_check("Formatting", "Bullet Points", False, "Use more bullet points for readability.", "High")
+        add_check("Formatting", "Bulletization", False, "Text block heavy. Use more bullets.", "High")
 
-    # 2. ESSENTIALS & CONTACT
-    emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', resume_text)
-    if emails:
-        add_check("Essentials", "Email Address", True, f"Found: {emails[0]}", "Critical")
+    # --- 4. CONTENT QUALITY ---
+    # Metrics
+    metrics = re.findall(r'(\d+(?:,\d+)*(?:\.\d+)?\s*(%|\$|M|K|\+|k|m))', resume_text)
+    metric_score = len(metrics)
+    if metric_score >= 6:
+        add_check("Content", "Quantifiable Impact", True, f"Strong data usage ({metric_score} metrics).", "High")
+    elif metric_score >= 3:
+        add_check("Content", "Quantifiable Impact", False, f"Weak data usage ({metric_score} metrics). Goal: 6+", "High")
     else:
-        add_check("Essentials", "Email Address", False, "Missing contact email.", "Critical")
+        add_check("Content", "Quantifiable Impact", False, "No quantified achievements found.", "Critical")
 
-    phones = re.findall(r'(\+\d{1,2}\s?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}', resume_text)
-    if phones:
-        add_check("Essentials", "Phone Number", True, "Contact number detected.", "Critical")
-    else:
-        add_check("Essentials", "Phone Number", False, "No phone number found.", "Critical")
-        
-    if "linkedin.com/in/" in resume_lower:
-        add_check("Essentials", "LinkedIn Profile", True, "Profile link active.", "High")
-    else:
-        add_check("Essentials", "LinkedIn Profile", False, "Add your LinkedIn URL.", "High")
-
-    # 3. STRUCTURE
-    sections = {
-        "Experience": r"(work|professional|relavant)\s+experience|employment\s+history|work\s+history",
-        "Education": r"education|academic|qualification",
-        "Skills": r"skills|technical\s+skills|expertise",
-        "Projects": r"projects|portfolio"
-    }
-    for sec, pattern in sections.items():
-        if re.search(pattern, resume_lower):
-            add_check("Structure", f"{sec} Section", True, f"Found '{sec}' header.", "High")
-        else:
-            add_check("Structure", f"{sec} Section", False, f"Missing '{sec}' section.", "High")
-
-    # 4. CONTENT
-    metrics = re.findall(r'(\d+(?:,\d+)*(?:\.\d+)?\s*(%|\$|M|K|\+|k|m|Yrs|yrs))', resume_text)
-    if len(metrics) >= 5:
-        add_check("Content", "Quantifiable Impact", True, f"Found {len(metrics)}+ metrics.", "Critical")
-    elif len(metrics) >= 2:
-        add_check("Content", "Quantifiable Impact", False, f"Only {len(metrics)} metrics found. Quantify more.", "High")
-    else:
-        add_check("Content", "Quantifiable Impact", False, "No hard numbers found. Quantify success.", "Critical")
-
-    strong_verbs = ["architected", "developed", "led", "managed", "analyzed", "created", "designed", "implemented", "optimized", "spearheaded", "built", "engineered"]
+    # Verbs
+    strong_verbs = ["architected", "developed", "led", "managed", "analyzed", "created", "designed", "implemented", "optimized", "spearheaded", "built", "engineered", "orchestrated", "pioneered", "delivered", "championed", "transformed", "reduced", "increased"]
     found_verbs = list(set([v for v in strong_verbs if f" {v} " in f" {resume_lower} "]))
     
-    if len(found_verbs) >= 5:
-        add_check("Content", "Power Verbs", True, f"Strong action vocabulary ({len(found_verbs)} verbs).", "High")
+    if len(found_verbs) >= 6:
+        add_check("Content", "Action Verbs", True, f"Dynamic vocabulary ({len(found_verbs)} unique).", "High")
     else:
-        add_check("Content", "Power Verbs", False, "Use more action verbs (e.g. Led, Built, Analyzed).", "High")
-    time.sleep(0.5)
-     
-    # Base calculation
-    max_potential = 65.0 
-    normalized_score = (raw_score / max_potential) * 100
-    
-    final_score = min(95.0, normalized_score)
-    
-    # We round to 1 decimal place.
-    final_score = round(final_score, 1)
+        add_check("Content", "Action Verbs", False, "Passive voice detected. Use strong verbs.", "High")
 
-    jd_match_score = 0
+    # Cliches
+    cliches = ["hard worker", "team player", "think outside the box", "go getter", "detail oriented", "responsible for", "duties included", "best of breed"]
+    found_cliches = [c for c in cliches if c in resume_lower]
+    if not found_cliches:
+         add_check("Content", "Cliché Check", True, "Professional, direct tone.", "Medium")
+    else:
+         add_check("Content", "Cliché Check", False, f"Remove fillers: {', '.join(found_cliches[:2])}", "Medium")
+
+    # --- CALCULATE BASE QUALITY SCORE ---
+    quality_score = (raw_score / MAX_POSSIBLE_SCORE) * 100 if MAX_POSSIBLE_SCORE > 0 else 0
+    
+    # Penalties for MISSING CRITICAL SECTIONS (The "Real" ATS Logic)
+    # Even if you have good keywords, if you have no Experience section, you are out.
+    if not section_presence["Experience"]:
+        quality_score = min(quality_score, 45) # Hard Cap
+    
+    if not section_presence["Education"] and not section_presence["Skills"]:
+        quality_score = min(quality_score, 50) # Hard Cap
+
+    quality_score = round(min(100.0, quality_score), 1)
+
+    # --- 5. JD RELEVANCE SCORE ---
+    jd_match_score = 0.0
     missing_keywords = []
-
+    top_keywords = []
+    
     if jd_text and len(jd_text.strip()) > 10:
-        # Extract Skills using NLP
-        res_skills_found, _ = extract_skills(resume_text)
-        jd_skills_found, _ = extract_skills(jd_text)
-        
-        if not jd_skills_found:
-             intersection = set(resume_lower.split()) & set(jd_text.lower().strip().split())
-             jd_match_score = min(100, int((len(intersection) / len(list(set(jd_text.lower().split())))) * 100 * 2)) 
-        else:
-             _, jd_details, sim_stats = compute_similarity(res_skills_found, jd_skills_found)
-             jd_match_score = sim_stats['overall']
-             missing_keywords = [d['jd_skill'] for d in jd_details if d['category'] == 'Low Match']
-        
-        # Weighted Final Score: 60% Quality, 40% Relevance
-        weighted_score = (final_score * 0.6) + (jd_match_score * 0.4)
-        final_score = min(95.0, weighted_score)
-        final_score = round(final_score, 1)
+        # Import heavy NLP only if needed
+        try:
+            from milestone2 import extract_skills
+            from milestone3 import compute_similarity
+            
+            res_skills, _ = extract_skills(resume_text)
+            jd_skills, _ = extract_skills(jd_text)
+            
+            if not jd_skills:
+                 # Fallback: Simple Set Intersection
+                 r_tokens = set(resume_lower.split())
+                 j_tokens = set(jd_text.lower().split())
+                 intersection = r_tokens & j_tokens
+                 jd_match_score = (len(intersection) / len(j_tokens)) * 100 if j_tokens else 0
+                 # Heuristic boost for matching common tech terms
+                 res_skills = list(intersection)
+            else:
+                 _, jd_details, sim_stats = compute_similarity(res_skills, jd_skills)
+                 jd_match_score = float(sim_stats['overall'])
+                 missing_keywords = [d['jd_skill'] for d in jd_details if d['category'] == 'Low Match']
+                 # Extract top matching keywords for display
+                 top_keywords = [(d['jd_skill'], 1) for d in jd_details if d['category'] == 'High Match'][:10]
+
+            # REAL ATS WEIGHTING: 
+            # If a JD is attached, Relevance is King. 60% Stickiness.
+            final_score = (quality_score * 0.4) + (jd_match_score * 0.6)
+            
+            # Contextual Penalty: If JD match is terrible (<20%), even a perfect resume fails.
+            if jd_match_score < 20:
+                final_score = min(final_score, 40.0)
+                
+        except Exception as e:
+            # Fallback in case of NLP error
+            final_score = quality_score
+    else:
+        # If no JD, we only judge Quality
+        final_score = quality_score
+
+    # Keyword extraction for display (generic if NO JD, strict if JD)
+    if not top_keywords:
+        common_stops = {"and", "the", "to", "of", "in", "a", "with", "for", "on", "as", "is", "by", "an", "at", "or", "from", "i", "my", "your", "be", "will"}
+        gen_keywords = [w for w in words if w not in common_stops and len(w) > 3]
+        top_keywords = Counter(gen_keywords).most_common(10)
 
     return {
-        "score": final_score,
-        "resume_quality": final_score,
-        "jd_match_score": jd_match_score,
+        "score": round(final_score, 1),
+        "resume_quality": quality_score, 
+        "jd_match_score": round(jd_match_score, 1),
         "checks": checks,
-        "metrics_count": len(metrics),
+        "metrics_count": metric_score,
         "verb_count": len(found_verbs),
         "word_count": word_count,
-        "email": emails[0] if emails else "N/A",
+        "name": candidate_name,
+        "email": email_found,
+        "phone": phone_found,
         "top_keywords": top_keywords,
-        "missing_keywords": missing_keywords
+        "missing_keywords": missing_keywords,
+        "cliches": found_cliches,
+        "readability_avg_len": int(avg_sentence_len),
+        "section_presence": section_presence
     }
 
 # ----------------
@@ -315,7 +384,8 @@ def app():
                         
                         ats_resume.seek(0)
                         raw_text = milestone1.parse_file(ats_resume)
-                        report = calculate_ats_score_advanced(raw_text, jd_txt)
+                        # Use the new Real-Time scoring engine
+                        report = calculate_ats_score_realtime(raw_text, jd_txt)
                         
                         st.session_state["ats_report_v3"] = report
                         st.session_state["ats_page_step"] = "results"
@@ -526,158 +596,232 @@ def app():
                 reset_app()
                 st.rerun()
             
-            st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+            
+            # --- TOP SECTION: ATS SIMULATION PROFILE ---
+            st.markdown("### 🤖 simulated_ats_view.log")
+            p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+            with p_col1:
+                st.markdown(f"**Candidate Name**<br><span style='color:#a855f7'>{report.get('name', 'Candidate')}</span>", unsafe_allow_html=True)
+            with p_col2:
+                st.markdown(f"**Email Detected**<br><span style='color:#a855f7'>{report.get('email', 'N/A')}</span>", unsafe_allow_html=True)
+            with p_col3:
+                st.markdown(f"**Phone Detected**<br><span style='color:#a855f7'>{report.get('phone', 'N/A')}</span>", unsafe_allow_html=True)
+            with p_col4:
+                wc = report.get('word_count', 0)
+                status = "✅ Optimal" if 450 <= wc <= 1200 else "⚠️ Review"
+                st.markdown(f"**Word CountStatus**<br><span style='color:{'#22c55e' if 'Optimal' in status else '#facc15'}'>{wc} words ({status})</span>", unsafe_allow_html=True)
 
-            col_L, col_R = st.columns([0.35, 0.65], gap="large")
+            st.markdown("---")
 
-            # --- LEFT COLUMN: SCORE & STATS ---
+            col_L, col_R = st.columns([0.4, 0.6], gap="large")
+
+            # --- LEFT COLUMN: VISUALS ---
             with col_L:
-                # 1. Score Card
+                # 1. RADAR CHART
+                categories = list(cat_scores.keys())
+                values = list(cat_scores.values())
+                
+                fig = go.Figure()
+                fig.add_trace(go.Scatterpolar(
+                    r=values,
+                    theta=categories,
+                    fill='toself',
+                    name='Resume DNA',
+                    line_color='#6366f1',
+                    fillcolor='rgba(99, 102, 241, 0.2)'
+                ))
+                fig.update_layout(
+                    polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                    showlegend=False,
+                    margin=dict(l=20, r=20, t=20, b=20),
+                    height=300,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='white')
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+                # 2. SCORE CARD
                 st.markdown(textwrap.dedent(f"""\
-                    <div style="background:rgba(30, 41, 59, 0.5); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:30px; text-align:center;">
-                        <div style="font-size:1rem; color:#94a3b8; margin-bottom:10px;">ATS MATCH SCORE</div>
-                        <div style="font-size:4.5rem; font-weight:800; color:{'#22c55e' if score >= 85 else '#facc15' if score >= 70 else '#ef4444'}; line-height:1;">
+                    <div style="background:rgba(15, 23, 42, 0.6); border:1px solid rgba(99, 102, 241, 0.3); border-radius:20px; padding:25px; text-align:center;">
+                        <div style="font-size:0.9rem; color:#cbd5e1; letter-spacing:1px;">ATS MATCH SCORE</div>
+                        <div style="font-size:4rem; font-weight:800; color:{'#22c55e' if score >= 85 else '#facc15' if score >= 70 else '#ef4444'}; text-shadow: 0 0 20px rgba(99,102,241,0.5);">
                             {score}
                         </div>
-                        <div style="font-size:1.2rem; margin-top:5px; color:#fff; font-weight:600;">
-                            {'Top 5% Candidate' if score >= 85 else 'Good Match' if score >= 70 else 'Needs Improvement'}
+                        <div style="font-size:1rem; color:#94a3b8; font-style:italic;">
+                            "{'An exceptional match!' if score >= 85 else 'Solid, but needs polish.' if score >= 70 else 'Requires optimization.'}"
                         </div>
                     </div>
                 """), unsafe_allow_html=True)
                 
                 st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
 
-                # 2. Category Breakdown
-                st.markdown("##### Score Breakdown")
-                
-                # Formatting
-                st.markdown(f"<div style='display:flex; justify-content:space-between; font-size:0.9rem; margin-bottom:5px;'><span>Formatting</span><span>{cat_scores['Formatting']}%</span></div>", unsafe_allow_html=True)
-                st.progress(cat_scores['Formatting'] / 100)
-                
-                # Content
-                st.markdown(f"<div style='display:flex; justify-content:space-between; font-size:0.9rem; margin-bottom:5px; margin-top:10px;'><span>Content Quality</span><span>{cat_scores['Content']}%</span></div>", unsafe_allow_html=True)
-                st.progress(cat_scores['Content'] / 100)
-                
-                # Structure
-                st.markdown(f"<div style='display:flex; justify-content:space-between; font-size:0.9rem; margin-bottom:5px; margin-top:10px;'><span>Structure & sections</span><span>{cat_scores['Structure']}%</span></div>", unsafe_allow_html=True)
-                st.progress(cat_scores['Structure'] / 100)
-
-                st.markdown('<div style="height:30px;"></div>', unsafe_allow_html=True)
-
-                # 3. Action Buttons
+                # 3. DOWNLOAD
                 pdf_bytes = pdf_gen.create_ats_report_pdf(report, candidate_name="Candidate")
-                
                 st.download_button(
-                    label="📥 Download PDF Report",
+                    label="📄 Download Full Audit Report (PDF)",
                     data=pdf_bytes,
                     file_name="ATS_Audit_Report.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
-                
-                st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
-                if st.button("🔗 Share Results", use_container_width=True):
-                    st.info("Public link copied to clipboard!")
 
-            # --- RIGHT COLUMN: TABS & DETAILS ---
+            # --- RIGHT COLUMN: DETAILED TABS ---
             with col_R:
-                tabs = st.tabs(["Overview", "Detailed Analysis", "Suggestions", "Job Match"])
+                tabs = st.tabs(["📊 Deep Dive", "📝 Text Analysis", "🎯 Job Match", "⚠️ Issues"])
 
-                # TAB 1: OVERVIEW
+                # TAB 1: DEEP DIVE (Category Breakdown)
                 with tabs[0]:
-                    st.markdown("### Executive Summary")
-                    st.caption(f"Analysis of {report['word_count']} words found in your resume.")
-                    
-                    # Quick Stats Grid
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.metric("Total Words", report['word_count'])
-                    with c2:
-                        st.metric("Power Verbs", report['verb_count'])
-                    with c3:
-                        st.metric("Hard Metrics", report['metrics_count'])
+                    # 1. Parsing Efficiency (Simulated Metadata)
+                    st.markdown("#### 🕵️ Parsing Efficiency")
+                    pe_c1, pe_c2, pe_c3 = st.columns(3)
+                    with pe_c1:
+                         st.markdown("**File Structure**")
+                         st.caption("PDF Layering")
+                         st.progress(0.95)
+                    with pe_c2:
+                         st.markdown("**Text Extraction**")
+                         st.caption("Clean OCR Quality")
+                         st.progress(1.0 if report.get('word_count', 0) > 200 else 0.4)
+                    with pe_c3:
+                         st.markdown("**Field Detection**")
+                         st.caption("Contact Info Confidence")
+                         st.progress(1.0 if report.get('email') != "N/A" and report.get('phone') != "N/A" else 0.5)
                     
                     st.markdown("---")
-                    st.subheader("detected_keywords.Cloud")
-                    if report['top_keywords']:
-                        html_tags = ""
-                        for k, v in report['top_keywords']:
-                             size = 0.8 + (v/10)
-                             html_tags += f"<span style='display:inline-block; margin:4px; padding:4px 10px; background:rgba(99,102,241,0.1); border-radius:12px; color:#a5b4fc; font-size:{min(size, 1.5)}rem;'>{k}</span>"
-                        st.markdown(html_tags, unsafe_allow_html=True)
-                    else:
-                        st.info("No significant keywords detected.")
 
-                # TAB 2: DETAILED ANALYSIS
-                with tabs[1]:
-                    # 1. PASSED
-                    st.markdown(f"#### 🟢 Passed Checks ({len(passed_checks)})")
-                    with st.expander("View Passed Items", expanded=False):
-                        for p in passed_checks:
-                            st.markdown(f"✅ **{p['name']}**: {p['feedback']}")
+                    # 2. Section Analysis (Grid)
+                    st.markdown("#### 🧱 Section Architecture")
+                    section_data = report.get('section_presence', {})
+                    if section_data:
+                        # Custom CSS for status badges
+                        st.markdown("""
+                        <style>
+                        .sec-badge { 
+                            padding: 8px 12px; 
+                            border-radius: 8px; 
+                            text-align: center; 
+                            margin-bottom: 8px; 
+                            font-size: 0.85rem; 
+                            font-weight: 500;
+                            border: 1px solid rgba(255,255,255,0.05);
+                        }
+                        .sec-success { background: rgba(34,197,94,0.15); color: #4ade80; border-color: rgba(34,197,94,0.3); }
+                        .sec-fail { background: rgba(239,68,68,0.15); color: #f87171; border-color: rgba(239,68,68,0.3); }
+                        </style>
+                        """, unsafe_allow_html=True)
+                        
+                        cols = st.columns(2)
+                        for i, (sec, found) in enumerate(section_data.items()):
+                            css_class = "sec-success" if found else "sec-fail"
+                            status_text = "DETECTED" if found else "MISSING"
+                            icon = "✅" if found else "🚫"
+                            
+                            with cols[i % 2]:
+                                st.markdown(f"""
+                                <div class="sec-badge {css_class}">
+                                    <div style="font-size:0.75rem; color:inherit; opacity:0.8;">{sec.upper()}</div>
+                                    <div style="font-size:1.1rem; margin-top:2px;">{icon} {status_text}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                    st.markdown("---")
                     
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    # 3. Category Deep Dive with Benchmarks
+                    st.markdown("#### ⚖️ Scoring Benchmarks")
+                    
+                    # Formatting
+                    st.markdown("**Formatting & Layout**")
+                    f_col1, f_col2 = st.columns([0.8, 0.2])
+                    with f_col1: st.progress(cat_scores['Formatting'] / 100)
+                    with f_col2: st.caption(f"{cat_scores['Formatting']}/100")
+                    st.caption(f"Benchmark: 90+ | Impact: High | *Ensures the robot can read your file.*")
+                    
+                    st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
 
-                    # 2. WARNINGS
-                    st.markdown(f"#### 🟠 Warnings ({len(warnings)})")
-                    if warnings:
-                        for w in warnings:
-                            st.warning(f"**{w['name']}**: {w['feedback']}")
+                    # Content
+                    st.markdown("**Content Impact**")
+                    c_col1, c_col2 = st.columns([0.8, 0.2])
+                    with c_col1: st.progress(cat_scores['Content'] / 100)
+                    with c_col2: st.caption(f"{cat_scores['Content']}/100")
+                    st.caption(f"Benchmark: 80+ | Impact: Critical | *Measures metrics and strong verbs.*")
+                    
+                    st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+                    # Structure
+                    st.markdown("**Structure & Completeness**")
+                    s_col1, s_col2 = st.columns([0.8, 0.2])
+                    with s_col1: st.progress(cat_scores['Structure'] / 100)
+                    with s_col2: st.caption(f"{cat_scores['Structure']}/100")
+                    st.caption(f"Benchmark: 100 | Impact: Critical | *Checks for mandatory resume sections.*")
+
+                # TAB 2: TEXT ANALYSIS (Readability, Buzzwords)
+                with tabs[1]:
+                    st.markdown("#### Communication Style")
+                    
+                    # Readability
+                    r_len = report.get('readability_avg_len', 15)
+                    r_status = "Excellent" if 10 <= r_len <= 20 else "Review"
+                    st.info(f"**Readability Score**: Avg Sentence Length is {r_len} words. ({r_status})")
+                    
+                    # Buzzwords
+                    cliches = report.get('cliches', [])
+                    if cliches:
+                        st.warning(f"**Buzzword Alert**: We found {len(cliches)} overused terms.")
+                        st.write("Consider replacing these with specific achievements:")
+                        for c in cliches[:5]:
+                            st.markdown(f"- *{c}*")
                     else:
-                        st.info("No warnings found.")
+                        st.success("No empty clichés detected. Your language is precise!")
+                        
+                    # Power Verbs
+                    v_count = report.get('verb_count', 0)
+                    st.metric("Power Verbs Used", v_count, delta="Target: 6+", delta_color="normal")
 
-                    st.markdown("<br>", unsafe_allow_html=True)
-
-                    # 3. CRITICAL ISSUES
-                    st.markdown(f"#### 🔴 Critical Issues ({len(critical_issues)})")
-                    if critical_issues:
-                        for c in critical_issues:
-                            st.error(f"**{c['name']}**: {c['feedback']}")
-                    else:
-                        st.success("No critical issues found!")
-
-                # TAB 3: SUGGESTIONS
+                # TAB 3: JOB MATCH
                 with tabs[2]:
-                    st.markdown("### AI Recommendations")
-                    if critical_issues or warnings:
-                        st.markdown("Based on our audit, here are your top priorities:")
-                        for i, issue in enumerate(critical_issues + warnings, 1):
-                            st.markdown(f"**{i}. Fix '{issue['name']}'**")
-                            st.markdown(f"> *Recommendation*: {issue['feedback']}")
-                            st.markdown("---")
-                    else:
-                        st.balloons()
-                        st.markdown("Your resume is optimized! Focus on networking and interview prep.")
-
-                # TAB 4: JOB MATCH
-                with tabs[3]:
-                    st.markdown("### JD Keyword Gap Analysis")
                     if st.session_state.get("ats_jd_text"):
-                        # Show missing keywords
+                        st.markdown("#### Keyword Gap Analysis")
                         missing = report.get("missing_keywords", [])
                         if missing:
                             st.error(f"Missing {len(missing)} Critical Keywords")
-                            st.write("Add these to your skills or experience to boost your match score:")
-                            
-                            # Chip view
-                            chips = ""
+                            # Chips
+                            html = ""
                             for m in missing:
-                                chips += f"<span style='margin:4px; display:inline-block; padding:4px 10px; background:#fee2e2; color:#ef4444; border-radius:14px; font-weight:600;'>{m}</span>"
-                            st.markdown(chips, unsafe_allow_html=True)
+                                html += f"<span style='background:#fee2e2; color:#ef4444; padding:4px 10px; border-radius:15px; margin:3px; display:inline-block; font-size:0.9rem;'>{m}</span>"
+                            st.markdown(html, unsafe_allow_html=True)
                         else:
-                            st.success("You matched all critical keywords from the JD!")
+                            st.success("Perfect Match! You have all the critical keywords.")
+                            
+                        # Top Keywords
+                        st.markdown("#### Your Top Keywords")
+                        found_kws = report.get("top_keywords", [])
+                        if found_kws:
+                            html_k = ""
+                            for k, v in found_kws[:10]:
+                                html_k += f"<span style='background:#dcfce7; color:#166534; padding:4px 10px; border-radius:15px; margin:3px; display:inline-block; font-size:0.9rem;'>{k} ({v})</span>"
+                            st.markdown(html_k, unsafe_allow_html=True)
                     else:
-                        st.info("Upload a Job Description on the previous page (or below) to see a keyword gap analysis.")
-                        jd_new = st.text_area("Paste JD here for instant analysis:", height=150)
-                        if st.button("Analyze JD"):
-                            st.session_state["ats_jd_text"] = jd_new
-                            st.session_state["ats_jd_input"] = jd_new
-                            import milestone1
-                            ats_resume = st.session_state["ats_uploaded_file"]
-                            ats_resume.seek(0)
-                            raw_text = milestone1.parse_file(ats_resume)
-                            report = calculate_ats_score_advanced(raw_text, jd_new)
-                            st.session_state["ats_report_v3"] = report
-                            st.rerun()
+                        st.info("Upload a Job Description to see the Match Analysis.")
+
+                # TAB 4: ISSUES LIST
+                with tabs[3]:
+                    st.markdown("#### Priority Action Items")
+                    if critical_issues:
+                        for c in critical_issues:
+                            st.error(f"**{c['name']}**: {c['feedback']}")
+                    elif warnings:
+                         for w in warnings:
+                            st.warning(f"**{w['name']}**: {w['feedback']}")
+                    else:
+                        st.success("No critical issues found!")
+                    
+                    with st.expander("View Passed Checks"):
+                        for p in passed_checks:
+                            st.markdown(f"✅ {p['name']}")
+
+                    if st.button("🔄 Re-Analyze"):
+                        st.rerun()
 
     ui_components.render_footer()

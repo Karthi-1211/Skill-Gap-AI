@@ -8,9 +8,271 @@ from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import datetime
 
+
 # ------------------------------------------------------------------------------
 # 1. MILESTONE 4 REPORT GENERATION
 # ------------------------------------------------------------------------------
+
+def create_ats_report_pdf(report, candidate_name="Candidate"):
+    """
+    Generates a premium, multi-page ATS Analysis Report.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.5*inch,
+        leftMargin=0.5*inch,
+        topMargin=0.5*inch,
+        bottomMargin=0.5*inch
+    )
+
+    styles = getSampleStyleSheet()
+    story = []
+
+    # --- THEME COLORS ---
+    c_brand_dark = colors.HexColor("#0f172a") # Dark Slate
+    c_brand_primary = colors.HexColor("#6366f1") # Indigo
+    c_brand_accent = colors.HexColor("#a855f7") # Purple
+    c_success = colors.HexColor("#22c55e")
+    c_warning = colors.HexColor("#eab308")
+    c_danger = colors.HexColor("#ef4444")
+    c_light_bg = colors.HexColor("#f8fafc")
+    c_white = colors.white
+
+    # --- CUSTOM STYLES ---
+    s_h1 = ParagraphStyle('H1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=30, textColor=c_brand_primary, alignment=TA_CENTER)
+    s_h2 = ParagraphStyle('H2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=16, leading=20, textColor=c_brand_dark, spaceBefore=20, spaceAfter=10)
+    s_h3 = ParagraphStyle('H3', parent=styles['Heading3'], fontName='Helvetica-Bold', fontSize=12, leading=16, textColor=c_brand_dark)
+    s_norm = ParagraphStyle('Normal', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=14, textColor=c_brand_dark)
+    s_small = ParagraphStyle('Small', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, textColor=colors.HexColor("#64748b"))
+    s_card_val = ParagraphStyle('CardVal', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=24, leading=28, textColor=c_white, alignment=TA_CENTER)
+    s_card_lbl = ParagraphStyle('CardLbl', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=12, textColor=colors.HexColor("#e2e8f0"), alignment=TA_CENTER)
+
+    # ==========================
+    # PAGE 1: EXECUTIVE DASHBOARD
+    # ==========================
+    
+    # 1. Header
+    story.append(Table(
+        [[Paragraph("ATS INTELLIGENCE REPORT", s_h1)]],
+        colWidths=[7.5*inch],
+        style=TableStyle([('BOTTOMPADDING', (0,0), (-1,-1), 0)])
+    ))
+    story.append(Paragraph(f"AUDIT DATE: {datetime.datetime.now().strftime('%B %d, %Y')} | CANDIDATE: {candidate_name.upper()}", 
+                           ParagraphStyle('Sub', parent=s_small, alignment=TA_CENTER)))
+    story.append(Spacer(1, 0.3*inch))
+    story.append(HRFlowable(width="100%", thickness=1, color=c_brand_primary, spaceAfter=20))
+
+    # 2. Score Cards (3 Columns)
+    score_overall = report.get('score', 0)
+    score_quality = report.get('resume_quality', 0)
+    score_match = report.get('jd_match_score', 0)
+    
+    # Helper to get color
+    get_col = lambda s: c_success if s >= 85 else c_warning if s >= 70 else c_danger
+    
+    # Create stylized "Cards" using nested tables
+    def create_card(title, value, bg_color):
+        return Table(
+            [[Paragraph(str(value), s_card_val)],
+             [Paragraph(title, s_card_lbl)]],
+            colWidths=[2.2*inch],
+            rowHeights=[0.5*inch, 0.3*inch],
+            style=TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), bg_color),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('ROUNDEDCORNERS', [10, 10, 10, 10]), # Not fully supported in all reportlab versions, but harmless
+                ('BOX', (0,0), (-1,-1), 1, bg_color),
+            ])
+        )
+
+    t_scores = Table([
+        [create_card("OVERALL SCORE", score_overall, get_col(score_overall)),
+         create_card("CONTENT QUALITY", score_quality, get_col(score_quality)),
+         create_card("JD MATCH", score_match, get_col(score_match))]
+    ], colWidths=[2.5*inch, 2.5*inch, 2.5*inch])
+    t_scores.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    story.append(t_scores)
+    story.append(Spacer(1, 0.4*inch))
+
+    # 3. High Level Insights
+    story.append(Paragraph("EXECUTIVE SUMMARY", s_h2))
+    
+    # Stats Row
+    stats_data = [
+        [f"{report.get('word_count', 0)}", f"{report.get('verb_count', 0)}", f"{report.get('metrics_count', 0)}"],
+        ["Total Words", "Power Verbs", "Hard Metrics"]
+    ]
+    t_stats = Table(stats_data, colWidths=[2.5*inch]*3)
+    t_stats.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 16),
+        ('TEXTCOLOR', (0,0), (-1,0), c_brand_primary),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('TEXTCOLOR', (0,1), (-1,1), colors.gray),
+        ('FONTSIZE', (0,1), (-1,1), 10),
+    ]))
+    story.append(t_stats)
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Text Analysis
+    summary_text = (
+        f"We processed your resume against industry standards. You performed well in having <b>{report.get('metrics_count',0)} quantifiable achievements</b> "
+        f"and using <b>{report.get('verb_count',0)} strong action verbs</b>. "
+        f"{'Your word count is optimal.' if 450 <= report.get('word_count',0) <= 1200 else 'Your word count requires adjustment.'}"
+    )
+    story.append(Table([[Paragraph(summary_text, s_norm)]], 
+                       colWidths=[7.5*inch], 
+                       style=TableStyle([('BACKGROUND', (0,0), (-1,-1), c_light_bg), ('TOPPADDING', (0,0), (-1,-1), 15), ('BOTTOMPADDING', (0,0), (-1,-1), 15), ('LEFTPADDING', (0,0), (-1,-1), 15), ('RIGHTPADDING', (0,0), (-1,-1), 15)])))
+    
+    story.append(Spacer(1, 0.4*inch))
+
+    # 4. Critical Issues List (Red Flags)
+    story.append(Paragraph("PRIORITY ACTION ITEMS", s_h2))
+    
+    checks = report.get('checks', [])
+    criticals = [c for c in checks if not c['status'] and c['impact'] == 'Critical']
+    highs = [c for c in checks if not c['status'] and c['impact'] == 'High']
+    action_items = criticals + highs
+    
+    if action_items:
+        for item in action_items[:5]: # Top 5
+            # Colored Bullet
+            col = c_danger if item['impact'] == 'Critical' else c_warning
+            
+            # Row Table
+            row_t = Table([
+                [Paragraph("•", ParagraphStyle('Bull', fontSize=20, textColor=col)),
+                 Paragraph(f"<b>{item['name']}</b> ({item['impact']})<br/>{item['feedback']}", s_norm)]
+            ], colWidths=[0.3*inch, 7*inch])
+            row_t.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+            story.append(row_t)
+            story.append(Spacer(1, 0.1*inch))
+    else:
+         story.append(Paragraph("No critical or high priority issues found. Your resume structure is excellent.", s_norm))
+
+    story.append(PageBreak())
+
+    # ==========================
+    # PAGE 2: DETAILED AUDIT
+    # ==========================
+    story.append(Paragraph("COMPREHENSIVE AUDIT", s_h1))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Group by category
+    categories = ["Essentials", "Structure", "Content", "Formatting"]
+    
+    for cat in categories:
+        cat_checks = [c for c in checks if c['category'] == cat]
+        if not cat_checks: continue
+        
+        # Category Header
+        story.append(Table([[Paragraph(cat.upper(), ParagraphStyle('CatHead', parent=s_h3, textColor=c_white))]], 
+                           colWidths=[7.5*inch],
+                           style=TableStyle([('BACKGROUND', (0,0), (-1,-1), c_brand_dark), ('LEFTPADDING', (0,0), (-1,-1), 10)])))
+        
+        # Checks Table
+        check_rows = []
+        for c in cat_checks:
+            status_icon = "✔" if c['status'] else "✖"
+            status_col = c_success if c['status'] else c_danger
+            
+            check_rows.append([
+                Paragraph(status_icon, ParagraphStyle('Icon', parent=s_norm, fontSize=12, textColor=status_col, alignment=TA_CENTER)),
+                Paragraph(c['name'], s_norm),
+                Paragraph(c['feedback'], s_small)
+            ])
+            
+        t_checks = Table(check_rows, colWidths=[0.5*inch, 2*inch, 5*inch])
+        t_checks.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BACKGROUND', (0,0), (-1,-1), c_white),
+            ('ROWBACKGROUNDS', (0,0), (-1,-1), [c_white, colors.HexColor("#f8fafc")]),
+        ]))
+        story.append(t_checks)
+        story.append(Spacer(1, 0.25*inch))
+        
+    story.append(PageBreak())
+
+    # ==========================
+    # PAGE 3: KEYWORD STRATEGY
+    # ==========================
+    story.append(Paragraph("KEYWORD OPTIMIZATION", s_h1))
+    story.append(Paragraph("ATS scanners look for specific skills and keywords from the job description.", s_norm))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # 1. Missing Keywords (The Red Box)
+    missing = report.get('missing_keywords', [])
+    
+    story.append(Paragraph("MISSING KEYWORDS (CRITICAL GAP)", s_h2))
+    if missing:
+        # Create a "Tag Cloud" look with a table
+        # Chunk into rows of 3-4
+        tags = []
+        row = []
+        for m in missing:
+            row.append(m)
+            if len(row) == 3:
+                tags.append(row)
+                row = []
+        if row: tags.append(row + ['']*(3-len(row)))
+        
+        t_missing = Table(tags, colWidths=[2.3*inch, 2.3*inch, 2.3*inch])
+        t_missing.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#fee2e2")), # Light red bg
+            ('TEXTCOLOR', (0,0), (-1,-1), c_danger),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+            ('SIZE', (0,0), (-1,-1), 10),
+            ('TOPPADDING', (0,0), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+            ('GRID', (0,0), (-1,-1), 2, c_white), # White borders to simulate gap between chips
+        ]))
+        story.append(t_missing)
+        story.append(Paragraph("<i>Recommendation: Add these specific keywords to your 'Skills' section or weave them into your experience bullets.</i>", 
+                               ParagraphStyle('Rec', parent=s_small, padding=10)))
+    else:
+        story.append(Paragraph("Excellent! We didn't detect any major missing keywords based on the job description.", s_norm))
+        
+    story.append(Spacer(1, 0.4*inch))
+    
+    # 2. Detected Keywords (Green Box)
+    story.append(Paragraph("DETECTED ASSETS", s_h2))
+    found_kws = report.get('top_keywords', [])
+    if found_kws:
+        # found_kws is list of tuples (word, count)
+        top_10 = [k[0] for k in found_kws[:12]]
+        
+        tags = []
+        row = []
+        for m in top_10:
+            row.append(m)
+            if len(row) == 4:
+                tags.append(row)
+                row = []
+        if row: tags.append(row + ['']*(4-len(row)))
+        
+        t_found = Table(tags, colWidths=[1.8*inch]*4)
+        t_found.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#dcfce7")), # Light green
+            ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor("#15803d")),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+            ('SIZE', (0,0), (-1,-1), 9),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('GRID', (0,0), (-1,-1), 2, c_white),
+        ]))
+        story.append(t_found)
+    else:
+        story.append(Paragraph("No significant keywords detected.", s_norm))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 def create_full_report_pdf(stats, jd_details, missing_kws, roadmap_weeks, project_ideas=[], soft_skills=[]):
     """

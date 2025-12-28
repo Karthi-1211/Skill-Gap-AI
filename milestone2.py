@@ -41,12 +41,23 @@ skill_categories = SKILL_CATEGORIES
 def load_nlp():
     import spacy
     try:
-        
+        # standard load
         return spacy.load("en_core_web_sm", disable=["parser", "ner", "textcat"])
-    except:
-        from spacy.cli import download
-        download("en_core_web_sm")
-        return spacy.load("en_core_web_sm", disable=["parser", "ner", "textcat"])
+    except OSError:
+        try:
+             # retry with full name just in case
+             return spacy.load("en_core_web_sm")
+        except:
+            # FALLBACK: Do not download at runtime (causes hangs). Use blank model.
+            # Skills extraction will still work with basic tokenization.
+            nlp = spacy.blank("en")
+            # Add simple lemmatizer if possible, otherwise lemma_ will be text
+            try:
+                nlp.add_pipe("lemmatizer", config={"mode": "lookup"})
+                nlp.initialize()
+            except:
+                pass
+            return nlp
 
 def clean_text(text: str) -> str:
     import re
