@@ -12,3 +12,5 @@ user_session.json
 *.docx
 *.txt
 !requirements.txt
+
+!packages.txt
