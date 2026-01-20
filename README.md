@@ -1,3 +1,14 @@
+---
+title: Skill Gap AI
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: 1.31.0
+app_file: main.py
+pinned: false
+---
+
 <div align="center">
 
 <img src="banner.png" alt="Skill Gap AI Banner" width="100%">

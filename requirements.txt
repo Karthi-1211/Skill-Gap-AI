@@ -15,3 +15,4 @@ torch
 transformers
 sentence-transformers
 xhtml2pdf
+streamlit-analytics2
