@@ -21,7 +21,7 @@ st.set_page_config(
 )
 
 # Start Tracking
-with streamlit_analytics.track(unsafe_password="admin123"):
+with streamlit_analytics.track(unsafe_password="$Kar_!thiK_001"):
     # -------------------------
     # UTILITIES & SETUP
     # ------------------------
