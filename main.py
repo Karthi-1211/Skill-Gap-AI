@@ -21,7 +21,9 @@ st.set_page_config(
 )
 
 # Start Tracking
-with streamlit_analytics.track(unsafe_password="$Kar_!thiK_001"):
+# Securely get analytics password from Streamlit Secrets
+analytics_password = st.secrets["analytics"]["password"]
+with streamlit_analytics.track(unsafe_password=analytics_password):
     # -------------------------
     # UTILITIES & SETUP
     # ------------------------
